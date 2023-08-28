@@ -9,28 +9,69 @@ package azulkv
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"time"
-//	"os"
+	"os"
 	"github.com/dgryski/go-t1ha"
 )
 
 type kvObj struct {
+	DirPath string
+	Dbg bool
 	Cap int
 	Num int
 	Entries *int
 	Hash *[]uint64
 	Keys *[]string
 	Vals *[]string
+	TabNam string
+	Tab *os.File
 }
 
 
-func InitKV() (dbpt *kvObj, err error){
+func InitKV(dirPath string, dbg bool) (dbpt *kvObj, err error){
 
 	db := kvObj {
 		Cap: 500,
 		Num: 1,
+		Dbg: dbg,
 	}
+
+    // find dir
+    _, err = os.Stat(dirPath)
+    if err != nil {
+        if os.IsNotExist(err) {
+            if dbg {log.Printf("db dir does not exist!\n")}
+
+            //create directory
+           	if  err1 := os.Mkdir(dirPath, 0755); err1 != nil {return &db, fmt.Errorf("could not create dir: %v", err1)}
+
+            db.DirPath = dirPath
+
+            //create files
+            tabNam := dirPath + "/azulkvBase.dat"
+            fil, err1:= os.Create(tabNam)
+            if err1 != nil {return &db, fmt.Errorf("could not create table: %v", err1)}
+            db.DirPath = dirPath
+            db.Tab=fil
+            db.TabNam = tabNam
+            return &db, nil
+        } else {
+            return &db, fmt.Errorf("could not open dir: %v", err)
+        }
+    }
+    log.Printf("azulkv dir exists!\n")
+
+    db.DirPath = dirPath
+
+	tabNam := dirPath + "/azulkvBase.dat"
+	fil, err2 := os.Open(tabNam)
+	if err2 != nil {
+		return &db, fmt.Errorf("could not open table: %v", err2)
+	}
+	db.Tab = fil
+	db.TabNam = tabNam
 
 	fill :=0
 	db.Entries = &fill
@@ -42,6 +83,8 @@ func InitKV() (dbpt *kvObj, err error){
 	vals := make([]string, capacity)
 	db.Vals = &vals
 
+	err = db.Load()
+	if err != nil {return &db, fmt.Errorf(" could not load table! %v", err)}
 	return &db, nil
 }
 
@@ -83,7 +126,7 @@ func (dbpt *kvObj) FillRan (level int) (err error){
 		(*db.Keys)[i] = string(bdat)
 		(*db.Hash)[i] = hashval
 		(*db.Vals)[i] = string(valb)
-		fmt.Printf(" %d: %d %s %s\n", i, (*db.Hash)[i], (*db.Keys)[i], (*db.Vals)[i])
+//		fmt.Printf(" %d: %d %s %s\n", i, (*db.Hash)[i], (*db.Keys)[i], (*db.Vals)[i])
 	}
 	db.Num = level
 	(*db.Entries) = level
@@ -219,9 +262,20 @@ func (db *kvObj) Backup () (err error){
 	return err
 }
 
-func (db *kvObj) KVLoad () (err error){
+func (db *kvObj) Load () (err error){
 
-	return err
+	return nil
 }
 
+func PrintDb(dbp *kvObj) {
 
+    db := *dbp
+//  dbg := db.Dbg
+
+    fmt.Printf("******* AzulKV: %s *******\n", db.DirPath)
+    fmt.Printf("Dir:    %s\n",db.DirPath)
+//    fmt.Printf("New DB: %t\n",db.Ndb)
+    fmt.Printf("  table: %s\n", db.TabNam)
+    fmt.Printf("********* End AzulKV: *******\n")
+    return
+}
