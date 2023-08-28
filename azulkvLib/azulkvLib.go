@@ -114,7 +114,7 @@ func (dbpt *kvObj) FillRan (level int) (err error){
 		bdat := GenRanData(5, 25)
 		hashval := GetHash(bdat)
 		valdat := GenRanData(5, 40)
-		valstr := fmt.Sprintf("val-%d_%s",i,string(valdat)
+		valstr := fmt.Sprintf("val-%d_%s",i,string(valdat))
 //		valb := []byte(valstr)
 		(*db.Keys)[i] = string(bdat)
 		(*db.Hash)[i] = hashval
@@ -239,8 +239,9 @@ func (dbP *kvObj) Clean () (err error){
 func (dbp *kvObj) Backup (tabNam string) (err error){
 
     db := *dbp
-    kvMap, err := azulkv.InitKV("testDb", true)
-    if err != nil {log.Fatalf("error -- InitKV: %v", err)}	numEntries := *db.Entries
+//    kvMap, err := InitKV("testDb", true)
+//    if err != nil {log.Fatalf("error -- InitKV: %v", err)}
+	numEntries := *db.Entries
 	dirPath := db.DirPath
 	filPath := dirPath + "/" + tabNam
 	if len(dirPath) == 0 {return fmt.Errorf("DirPath not found!")}
