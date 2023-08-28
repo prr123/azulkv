@@ -77,8 +77,6 @@ func InitKV(dirPath string, dbg bool) (dbpt *kvObj, err error){
 
     db.DirPath = dirPath
 
-//	err = db.Load("azulkvBase.dat")
-//	if err != nil {return &db, fmt.Errorf(" could not load table! %v", err)}
 	return &db, nil
 }
 
@@ -90,12 +88,12 @@ func GetHash(bdat []byte) (hash uint64) {
 	return hash
 }
 
-func GenRanData () (bdat []byte) {
+func GenRanData (rangeStart, rangeEnd int) (bdat []byte) {
 
 	var seededRand = rand.New(rand.NewSource(time.Now().UnixNano()))
 
-    rangeStart := 5
-    rangeEnd := 25
+//    rangeStart := 5
+//    rangeEnd := 25
     offset := rangeEnd - rangeStart
 
     randLength := seededRand.Intn(offset) + rangeStart
@@ -113,13 +111,14 @@ func (dbpt *kvObj) FillRan (level int) (err error){
 
 	db := *dbpt
 	for i:=0; i<level; i++ {
-		bdat := GenRanData()
+		bdat := GenRanData(5, 25)
 		hashval := GetHash(bdat)
-		valstr := fmt.Sprintf("val_%d",i)
-		valb := []byte(valstr)
+		valdat := GenRanData(5, 40)
+		valstr := fmt.Sprintf("val-%d_%s",i,string(valdat)
+//		valb := []byte(valstr)
 		(*db.Keys)[i] = string(bdat)
 		(*db.Hash)[i] = hashval
-		(*db.Vals)[i] = string(valb)
+		(*db.Vals)[i] = valstr
 //		fmt.Printf(" %d: %d %s %s\n", i, (*db.Hash)[i], (*db.Keys)[i], (*db.Vals)[i])
 	}
 	db.Num = level
@@ -240,7 +239,8 @@ func (dbP *kvObj) Clean () (err error){
 func (dbp *kvObj) Backup (tabNam string) (err error){
 
     db := *dbp
-	numEntries := *db.Entries
+    kvMap, err := azulkv.InitKV("testDb", true)
+    if err != nil {log.Fatalf("error -- InitKV: %v", err)}	numEntries := *db.Entries
 	dirPath := db.DirPath
 	filPath := dirPath + "/" + tabNam
 	if len(dirPath) == 0 {return fmt.Errorf("DirPath not found!")}
@@ -251,8 +251,8 @@ func (dbp *kvObj) Backup (tabNam string) (err error){
 
 	//create table
 	outfil, err:= os.Create(filPath)
+	defer outfil.Close()
 	if err != nil {return fmt.Errorf("could not create table: %v", err)}
-
 
 	numEnt := uint32(numEntries)
 	backSize := 4 + int(unsafe.Sizeof(numEnt))*numEntries *2
