@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"time"
 	"os"
+	"unsafe"
 	"github.com/dgryski/go-t1ha"
 )
 
@@ -38,6 +39,16 @@ func InitKV(dirPath string, dbg bool) (dbpt *kvObj, err error){
 		Dbg: dbg,
 	}
 
+	fill :=0
+	db.Entries = &fill
+	capacity := db.Cap
+	hash := make([]uint64, capacity)
+	db.Hash = &hash
+	keys := make([]string, capacity)
+	db.Keys = &keys
+	vals := make([]string, capacity)
+	db.Vals = &vals
+
     // find dir
     _, err = os.Stat(dirPath)
     if err != nil {
@@ -50,13 +61,14 @@ func InitKV(dirPath string, dbg bool) (dbpt *kvObj, err error){
             db.DirPath = dirPath
 
             //create files
+/*
             tabNam := dirPath + "/azulkvBase.dat"
             fil, err1:= os.Create(tabNam)
             if err1 != nil {return &db, fmt.Errorf("could not create table: %v", err1)}
-            db.DirPath = dirPath
             db.Tab=fil
             db.TabNam = tabNam
-            return &db, nil
+*/  
+          return &db, nil
         } else {
             return &db, fmt.Errorf("could not open dir: %v", err)
         }
@@ -65,26 +77,8 @@ func InitKV(dirPath string, dbg bool) (dbpt *kvObj, err error){
 
     db.DirPath = dirPath
 
-	tabNam := dirPath + "/azulkvBase.dat"
-	fil, err2 := os.Open(tabNam)
-	if err2 != nil {
-		return &db, fmt.Errorf("could not open table: %v", err2)
-	}
-	db.Tab = fil
-	db.TabNam = tabNam
-
-	fill :=0
-	db.Entries = &fill
-	capacity := db.Cap
-	hash := make([]uint64, capacity)
-	db.Hash = &hash
-	keys := make([]string, capacity)
-	db.Keys = &keys
-	vals := make([]string, capacity)
-	db.Vals = &vals
-
-	err = db.Load()
-	if err != nil {return &db, fmt.Errorf(" could not load table! %v", err)}
+//	err = db.Load("azulkvBase.dat")
+//	if err != nil {return &db, fmt.Errorf(" could not load table! %v", err)}
 	return &db, nil
 }
 
@@ -133,20 +127,6 @@ func (dbpt *kvObj) FillRan (level int) (err error){
 	dbpt = &db
 //fmt.Printf("fil db: %v\n", dbpt)
 	return nil
-}
-
-func (dbpt *kvObj) PrintKV (idx int, num int) {
-
-	db := *dbpt
-	fmt.Printf("Entries: %d\n", (*db.Entries))
-	if idx+num > (*db.Entries) {
-		fmt.Printf("invalid idx; idx + num > %d!\n", db.Entries)
-		return
-	}
-	for i:=idx; i<idx + num; i++ {
-		fmt.Printf("  [%2d]: %d %20s %s\n", i, (*db.Hash)[i], (*db.Keys)[i], (*db.Vals)[i])
-	}
-	return
 }
 
 
@@ -252,18 +232,130 @@ func (dbp *kvObj) GetKeyByIdx (idx int) (key string) {
 	return key
 }
 
-func (db *kvObj) Clean () (err error){
+func (dbP *kvObj) Clean () (err error){
 
 	return err
 }
 
-func (db *kvObj) Backup () (err error){
+func (dbp *kvObj) Backup (tabNam string) (err error){
 
-	return err
+    db := *dbp
+	numEntries := *db.Entries
+	dirPath := db.DirPath
+	filPath := dirPath + "/" + tabNam
+	if len(dirPath) == 0 {return fmt.Errorf("DirPath not found!")}
+    _, err = os.Stat(filPath)
+    if err == nil {
+		return fmt.Errorf("table %s already exists!: %v", tabNam, err)
+    }
+
+	//create table
+	outfil, err:= os.Create(filPath)
+	if err != nil {return fmt.Errorf("could not create table: %v", err)}
+
+
+	numEnt := uint32(numEntries)
+	backSize := 4 + int(unsafe.Sizeof(numEnt))*numEntries *2
+
+	bck := make([]byte, backSize, 4096)
+
+
+	pt := (*[4]byte)(unsafe.Pointer(&numEnt))[:]
+	copy(bck[:4], pt)
+	for i:=0; i<3; i++ {
+		fmt.Printf("%d:", bck[i])
+	}
+	fmt.Printf("%d\n", bck[4])
+
+	start := 4
+	for i:=0; i<numEntries; i++ {
+		entry := uint32(i)
+		pt := (*[4]byte)(unsafe.Pointer(&entry))[:]
+		copy(bck[start+i*4:start+(i+1)*4], pt)
+	}
+
+	start = numEntries*4 + 4
+	for i:=0; i<numEntries; i++ {
+		klen := uint16(len((*db.Keys)[i]))
+		pt := (*[2]byte)(unsafe.Pointer(&klen))[:]
+		copy(bck[start:start+2], pt)
+		vlen := uint16(len((*db.Vals)[i]))
+		pt2 := (*[2]byte)(unsafe.Pointer(&vlen))[:]
+		copy(bck[start+2:start+4], pt2)
+		start = start + 4
+		fmt.Printf("  %d: kl %d vl %d\n",i, klen, vlen)
+		key := []byte((*db.Keys)[i])
+		copy(bck[start:start+int(klen)],key)
+		val := []byte((*db.Vals)[i])
+		copy(bck[start +int(klen):start+int(klen)+int(vlen)],val)
+		fmt.Printf("klen: %d vlen: %d key: %s val %s\n", klen, vlen, string(key), string(val))
+		start = start + int(klen) + int(vlen)
+	}
+	endpt := start
+	fmt.Printf("endpt: %d\n",endpt)
+	_, err = outfil.Write(bck[:endpt])
+	if err !=nil {return fmt.Errorf("backup write: %v", err)}
+	return nil
 }
 
-func (db *kvObj) Load () (err error){
 
+func (dbp *kvObj) Load(tabNam string) (err error){
+	var numEntries uint32
+
+    db := *dbp
+//	capacity := db.Cap
+
+	dirPath := db.DirPath
+	filPath := dirPath + "/" + tabNam
+
+	bckup, err := os.ReadFile(filPath)
+	if err != nil {return fmt.Errorf("could not read table: %v", err)}
+
+	siz := len(bckup)
+
+	fmt.Printf("backup: %d\n",siz)
+
+	if siz < 4 {return fmt.Errorf("no valid numEntries found!")}
+
+	numEntries = *(*uint32)(unsafe.Pointer(&bckup[0]))
+	numKeys := int(numEntries)
+	(*db.Entries) = numKeys
+
+	// fill kvObj
+//	Keys := make([]string,numKeys, capacity)
+
+/*
+	for i:=0; i<3; i++ {
+		fmt.Printf("%d:", bckup[i])
+	}
+	fmt.Printf("%d\n", bckup[4])
+*/
+	fmt.Printf("numEntries: %d\n", numEntries)
+	entries := make([]uint32, numKeys)
+
+	for i:=0; i< numKeys; i++ {
+		entries[i] = *(*uint32)(unsafe.Pointer(&bckup[4+i*4]))
+	}
+
+	for i:=0; i< numKeys; i++ {
+		fmt.Printf("entry[%d]: %d\n", i, entries[i])
+	}
+
+	start := 4 + numKeys*4
+	for i:=0; i< numKeys; i++ {
+		klen := *(*uint16)(unsafe.Pointer(&bckup[start]))
+		vlen := *(*uint16)(unsafe.Pointer(&bckup[start +2]))
+		fmt.Printf("  %d: klen %d vlen %d\n", i, klen, vlen)
+		key := bckup[start +4: start+4+int(klen)]
+		val := bckup[start +4 + int(klen): start+4+int(klen)+int(vlen)]
+		start = start + 4 + int(klen) + int(vlen)
+		(*db.Keys)[i] = string(key)
+		(*db.Vals)[i] = string(val)
+		(*db.Hash)[i] = GetHash(key)
+
+		fmt.Printf("klen: %d vlen: %d key: %s val %s\n", klen, vlen, string(key), string(val))
+	}
+    dbp = &db
 	return nil
 }
 
@@ -279,3 +371,19 @@ func PrintDb(dbp *kvObj) {
     fmt.Printf("********* End AzulKV: *******\n")
     return
 }
+
+func (dbpt *kvObj) PrintKV (idx int, num int) {
+
+	db := *dbpt
+	fmt.Printf("********* Entries: %d *************\n", (*db.Entries))
+	if idx+num > (*db.Entries) {
+		fmt.Printf("invalid idx; idx + num > %d!\n", db.Entries)
+		return
+	}
+	for i:=idx; i<idx + num; i++ {
+		fmt.Printf("  [%2d]: %d %20s %s\n", i, (*db.Hash)[i], (*db.Keys)[i], (*db.Vals)[i])
+	}
+	fmt.Printf("********* End Entries *************\n")
+	return
+}
+
